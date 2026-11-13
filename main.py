@@ -6,9 +6,9 @@ Created on Sat Aug  2 18:34:49 2025
 """
 #%% Initial Settings
 # Comment/uncomment the following based on your debugging needs
-DATA2USE="SwissMetro" #['SwissMetro', 'Synthesized']
-STUDYNAME="dcmseal2" #e.g., dcmseal2, explore4; 'explore' will trigger grid search and the last number (if there is) will override # latent classes
-NUMTRIALS=50 if "explore" in STUDYNAME else 200
+DATA2USE="MoMo" #['TwinCitiesPath', 'SwissMetro', 'Synthesized','MoMo']
+STUDYNAME="dcmssealtest2" #e.g., dcmseal2, explore4; 'explore' will trigger grid search and the last number (if there is) will override # latent classes
+NUMTRIALS=50 if "explore" in STUDYNAME else 20
 LOGNUM=1 if "explore" in STUDYNAME else 10
 # see results with anaconda: tensorboard --logdir 'LogSavedDirectory'/
 
@@ -30,8 +30,13 @@ warnings.filterwarnings("ignore", category=UserWarning, message=".*Grad strides 
 
 if '__file__' in globals():
     WPATH = Path(__file__).resolve().parent
+elif os.name=='posix': #linux server; Windows='nt'
+    WPATH='/export/scratch/users/baek0040/git/TCML/MLTraining'
 else:
-    WPATH=Path('D:/My Drive/phd/LabETC/DCMSEAL/GitHub').resolve() # input your own directory for smoother IDE experience
+    if os.environ['USERPROFILE']==r'C:\Users\baek0040':
+        WPATH=Path('C:/Users/baek0040/Documents/GitHub/BaekKhani_DCMSEAL').resolve()
+    else:
+        WPATH=Path('C:/git/BaekKhani_DCMSEAL').resolve()
 os.chdir(WPATH)
 
 if globals().get('DATA2USE') is None:
@@ -71,6 +76,40 @@ match DATA2USE:
             "n_alternatives": 3,
             "choice_mode": "heterogeneous",
         }
+    case 'TwinCitiesPath':
+        CONFIG = {
+            # -- Data Processing Hyperparameters --
+            'train_size':56225,
+            "core_vars": ["tway","iv", "wt", "wk","nTrans","PS"],
+            "non_positive_core_vars":['iv','nTrans'],
+            "embedding_vars": ["summer","dayofweek","plan","realtime","access","egress","oppo","hr"],
+            "segmentation_vars_categorical": ["hhsize","HHcomp","white","visitor","worktype","stu","engflu","age","income","disability","gender","choicerider","purpose"],
+            "segmentation_vars_continuous": [],
+            "test_size": 0.2,
+            "random_state": 5723588,
+            # -- Model Architecture Hyperparameters --
+            "n_latent_classes": 2,
+            "n_alternatives": 5,
+            "choice_mode": "homogeneous", #'heterogeneous' or 'homogeneous'.
+        }
+    case 'MoMo':
+        CONFIG = {
+            # -- Data Processing Hyperparameters --
+            'train_size':13786,
+            "core_vars": ["iv", "wt", "aux","nTrans"],
+            'seg_entropy_weight': 0.05, #optional lambda to control output entropy
+            "non_positive_core_vars":["iv","wt","aux","nTrans"],
+            "embedding_vars": ["summer","dayofweek","plan","realtime","access","egress","oppo","hr"],
+            "segmentation_vars_categorical": ["hhsize","HHcomp","white","visitor","worktype","stu","engflu",
+                                              "age","income","disability","gender","choicerider","purpose"],
+            "segmentation_vars_continuous": [],
+            "test_size": 0.2,
+            "random_state": 5723588,
+            # -- Model Architecture Hyperparameters --
+            "n_latent_classes": 2,
+            "n_alternatives": 2,
+            "choice_mode": "heterogeneous",
+        }
 # For a grid search that outputs a list "pools" of tuples where each tuple is ([seg_list],[emb_list])
 if STUDYNAME[:-1].lower()=='explore':
     pool = sorted(CONFIG['embedding_vars']+CONFIG['segmentation_vars_categorical'])
@@ -91,7 +130,7 @@ except ValueError:
     print('Basic setting has been configured; some will be done later in run_model.py')
 
 
-#%% Main Optuna Experiments
+#%% main
 import torch # placed here to reduce overhead for the above CONFIG definition
 from src.run_model import run_model
 torch.set_float32_matmul_precision('medium')
@@ -154,6 +193,7 @@ STORAGE_NAME='sqlite:///optunaStudies.db'
 if "explore" in STUDYNAME:
     matches=[re.compile(rf'{STUDYNAME}_(\d+)').match(f) for f in os.listdir()]
     remainings=set(range(len(pools)))-set([int(m.group(1)) for m in matches if m is not None])
+
 else:
     remainings={0}
 # --- Create and Run the Optuna Study ---
@@ -207,7 +247,8 @@ for i in remainings:
         print('Finished')
 
 if '__file__' in globals():
-    raise Exception('exploration has been completed; proceed with an IDE interactive env for post-search analyses')
+    raise Exception('exploration has been completed; proceed with an IDE env for post-model analyses')
+
 
 
 #%% Post-Search Codes
@@ -271,7 +312,8 @@ def match_rows(estimatedMat,mrscol='x1',exclEmbedding=True):
     for i, true_row in trueVal.iterrows():
         for j, estimated_row in estimatedMatTemp.iterrows():
             mrae_matrix[i, j] = calculate_mrae(true_row.values, estimated_row.values)
-    row_indices, col_indices = linear_sum_assignment(mrae_matrix)    # Determine the optimal row matching using Hungarian Alg.
+    row_indices, col_indices = linear_sum_assignment(mrae_matrix)    # Determine the optimal row matching
+    #estimatedMatModified = estimatedMat.iloc[col_indices].set_index(f'class_{i+1}' for i in range(len(trueVal)))    # Reorder estimatedMat
     return col_indices
 
 def resReport(config,data2use=data2use,mrsdiv='x1'): #warning: if config is not fed, the pinned config upon the function definition will be used
@@ -385,7 +427,7 @@ if data2use=="Synthesized":
         config['max_epochs'] = min(max(50,config['total_updates'] // config['updates_per_epoch']),500)
         config['batch_size'] = max(128, math.ceil(config['train_size'] / config['updates_per_epoch']))
         config["segmentation_hidden_dims"]=[config[f'n_nodes_layer_{i}'] for i in range(config['num_hidden_layers'])]
-        rhocut=dfStudy.iloc[9,:]['user_attrs_test/rho2'] # top 5%
+        rhocut=dfStudy.iloc[9,:]['user_attrs_test/rho2'] # top 20%
     config.update(additUpdate)
 
 if data2use=="SwissMetro":
@@ -393,7 +435,7 @@ if data2use=="SwissMetro":
     maxMRS=60
     store='params'
     mrsdiv='CO'
-    storage='sqlite:///results/251026_SwissMetro/SwissMetro.db'
+    storage='sqlite:///results/251026_SwissMetroFinal/SwissMetro.db'
     studies=optuna.get_all_study_summaries(storage=storage)
     print([s.study_name for s in studies])
     allvars=config['embedding_vars']+config['segmentation_vars_categorical']
@@ -413,10 +455,14 @@ if data2use=="SwissMetro":
     config['max_epochs'] = min(max(50,config['total_updates'] // config['updates_per_epoch']),500)
     config['batch_size'] = max(128, math.ceil(config['train_size'] / config['updates_per_epoch']))
     config["segmentation_hidden_dims"]=[config[f'n_nodes_layer_{i}'] for i in range(config['num_hidden_layers'])]
-    rhocut=dfStudy.iloc[9,:]['user_attrs_test/rho2'] # top 5%
+    rhocut=dfStudy.iloc[9,:]['user_attrs_test/rho2'] # top 5% (if 200) or 20% (50)
     config.update(additUpdate)
+#res=resReport(config,mrsdiv=mrsdiv)
 
 def saveResults(numStat=30, maxMRS=20,store='params',rhocut=rhocut, savename=STUDYNAME):
+    '''
+    numStat, maxMRS,store, rhocut, savename= 30, 50, 'params', 0.35, studyname
+    '''
     modelcount=0
     goodcount=0
     while goodcount<numStat:
@@ -451,4 +497,42 @@ def saveResults(numStat=30, maxMRS=20,store='params',rhocut=rhocut, savename=STU
 
 if not (Path.cwd()/"results"/('res_'+data2use+'_'+STUDYNAME+'.csv')).exists():
     saveResults(maxMRS=maxMRS,store=store,rhocut=rhocut)
+    0
+
+
+#%% backups
+'''
+    case 'Synthesized':
+        train_size= 25000
+        CONFIG = {
+            # -- Data Processing Hyperparameters --
+            'train_size':25000,
+            "core_vars": ["x1","x2","x3"],
+            "non_positive_core_vars":["x1","x2","x3"],
+            "embedding_vars": ["e1","e2"],
+            "segmentation_vars_categorical": ["s1","s2","o1"],
+            "test_size": 0.2,
+            "random_state": 5723588,
+            # -- Model Architecture Hyperparameters --
+            "n_latent_classes": 3,
+            "n_alternatives": 2,
+            "choice_mode": "heterogeneous",
+        }
+    case 'SwissMetro':
+        CONFIG = {
+            # -- Data Processing Hyperparameters --
+            'train_size':9036*3,
+            "core_vars": ["CO", "TT", "HE"],
+            "non_positive_core_vars":["CO","TT","HE"],
+            "embedding_vars": ["firstclass","tickettype","whopaid","luggage","seats"],
+            "segmentation_vars_categorical":["age","male","income","seasonalticket","purpose","oricanton","descanton"], 
+            "segmentation_vars_continuous": [],
+            "test_size": 0.2,
+            "random_state": 5723588,
+            # -- Model Architecture Hyperparameters --
+            "n_latent_classes": 2,
+            "n_alternatives": 3,
+            "choice_mode": "heterogeneous",
+        }
+'''
 

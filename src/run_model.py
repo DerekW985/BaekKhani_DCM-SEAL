@@ -4,12 +4,12 @@ Created on Sat Aug  2 18:34:49 2025
 
 @author:Kwangho Baek baek0040@umn.edu; dptm22203@gmail.com
 """
-
+#%% Block 1 
 import os
 from pathlib import Path
 
 if __name__ == "__main__":
-    if Path.cwd().name=='src': # optional control for easier debugging
+    if Path.cwd().name=='src':
         os.chdir("..")
 
 import warnings
@@ -54,7 +54,7 @@ def run_model(config:dict,data2use:str='Synthesized',verbose:bool=False,logname:
     config["segmentation_net_dims"] = [total_seg_vars] + hidden_dims + [config["n_latent_classes"]]
     print(f"Updated segmentation network dimensions to: {config['segmentation_net_dims']}")
 
-    # Recreate input dataframe
+    #recreate input dataframe
     dfInput=pd.concat([train_df,test_df])
     #dfInput[['chid','pid']].iloc[1::config['n_alternatives']].to_csv('sort.csv',index=False)
     dfInput=dfInput.loc[:,config['core_vars']+config['segmentation_vars']].reset_index(drop=True)
@@ -71,6 +71,9 @@ def run_model(config:dict,data2use:str='Synthesized',verbose:bool=False,logname:
     test_collate = test_dataset.collate_indices if fast_dataloader else None
 
     numwork = config.get("dataloader_num_workers", 0)
+    if os.name == "nt":
+        numwork = 0  # Windows multiprocessing incurs heavy overhead
+
     warnings.filterwarnings("ignore", ".*does not have many workers.*")
 
     train_loader = DataLoader(
@@ -115,11 +118,11 @@ def run_model(config:dict,data2use:str='Synthesized',verbose:bool=False,logname:
     trainer = pl.Trainer(
         max_epochs=config["max_epochs"],
         accelerator="gpu" if use_gpu else "cpu", #"auto",
-        devices=1, # don't recommend multi-gpu run for a single session; unstable
+        devices=1, #removed multi-GPU DDP
         precision="16-mixed" if use_gpu else 32,
         callbacks=[checkpoint_callback, early_stop], # Use the two callbacks above
         logger=pl.loggers.TensorBoardLogger("logs/", name=data2use + '_' + logname),
-        log_every_n_steps=1000,
+        log_every_n_steps=1000, # Print/log every 10 training batches
         enable_model_summary=False, # Skip the parameter summary to reduce overhead
         gradient_clip_val = 1 # Clip gradients at L2-norm to prevent spikes
 )
@@ -154,6 +157,19 @@ else:
     data2use=DATA2USE
     config=CONFIG.copy()
     match data2use:
+        case 'TwinCitiesPath':
+            config.update({
+                "non_positive_core_vars":['iv','nTrans'],
+                "n_latent_classes": 2,
+                "embedding_mode": "shared", 
+                "segmentation_hidden_dims": [128, 256, 128],
+                "learning_rate": 0.002,
+                "segmentation_dropout_rate": 0.2,
+                "weight_decay_segmentation": 1e-3,
+                "weight_decay_embedding": 1e-2,
+                "batch_size": 2048,
+                "max_epochs": 50,
+            })
         case 'Synthesized':
             config.update({
                 "non_positive_core_vars":['x1','x2','x3'],
@@ -180,14 +196,40 @@ else:
                 "batch_size": 1024,
                 "max_epochs": 10,
             })
+        case 'MoMo':
+            config.update({
+                "non_positive_core_vars":['iv','nTrans'],
+                "n_latent_classes": 6,
+                "embedding_mode": "class-specific", 
+                "segmentation_hidden_dims": [128, 256, 128],
+                "learning_rate": 0.002,
+                "segmentation_dropout_rate": 0.2,
+                "weight_decay_segmentation": 1e-3,
+                "weight_decay_embedding": 1e-2,
+                "batch_size": 2048,
+                "max_epochs": 50,
+            })
 
     trained_model, bestobj, scores, dfInput = run_model(config,data2use,True)
-    print(scores)
     from src.reporting_estimates import extract_betas, extract_embedding, predict_membership
     beta, beta_raw = extract_betas(trained_model, config)
     emb_df = extract_embedding(trained_model,config)
     membership_df=predict_membership(trained_model,dfInput)
-    print(beta)
-    print(beta_raw)
-    print(emb_df)
 
+
+'''
+        case 'Synthesized':
+            config.update({
+                "non_positive_core_vars":['x1','x2','x3'],
+                "n_latent_classes": 3,
+                "embedding_mode": "class-specific", 
+                "segmentation_hidden_dims": [128, 256, 128],
+                "learning_rate": 0.002,
+                "segmentation_dropout_rate": 0.2,
+                "weight_decay_segmentation": 1e-2,
+                "weight_decay_embedding": 1e-3,
+                "batch_size": 512,
+                "max_epochs": 50,
+            })
+'''
+# %%

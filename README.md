@@ -75,7 +75,7 @@ data/<DatasetName>/
 Edit the configuration dictionary in `src/run_model.py`, or import and pass a configuration from the first block of `main.py`:
 
 ```bash
-python src/run_model.py
+python -m src.run_model.py
 ```
 
 ### 3) Hyperparameter search

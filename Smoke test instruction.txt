@@ -1,0 +1,19 @@
+1. Check if the data/MoMo folder exists (dfConv.csv, dfIn.csv).
+
+2. Open the Python IDE and change the directory to the root folder: BaekKhani_DCMSEAL.
+
+3. Open main.py in the IDE and replace line 9 from DATA2USE="SwissMetro" to DATA2USE="MoMo" and line 10 STUDYNAME's integer suffix as appropriate.
+
+4. Run the first block of main.py (F9 or Ctrl+Enter in Spyder, or manually run lines 7-130)
+
+5. Type print(CONFIG) in the interpreter and see if it shows the following:
+{'train_size': 13786, 'core_vars': ['iv', 'wt', 'aux', 'nTrans'], 'seg_entropy_weight': 0.05, 'non_positive_core_vars': ['iv', 'wt', 'aux', 'nTrans'], 'embedding_vars': ['summer', 'dayofweek', 'plan', 'realtime', 'access', 'egress', 'oppo', 'hr'], 'segmentation_vars_categorical': ['hhsize', 'HHcomp', 'white', 'visitor', 'worktype', 'stu', 'engflu', 'age', 'income', 'disability', 'gender', 'choicerider', 'purpose'], 'segmentation_vars_continuous': [], 'test_size': 0.2, 'random_state': 5723588, 'n_latent_classes': 2, 'n_alternatives': 2, 'choice_mode': 'heterogeneous'}
+
+6. Open src/run_model.py. main.py is a high-level orchestrator meant to do multiple queued work, whereas run_model.py itself is a one-time single-model trainer but requires the CONFIG to be predefined (we did it in Step 4).
+
+7. Normally, when we ran main.py, the hyperparameter tuning tool called Optuna alternately assigns some missing settings in CONFIG, so the code works. However, when we want to do a smoke test in src/run_model.py, missing hyperparameters like batch_size should be manually defined. This is done in the match-case block of src/run_model.py around the end of the file. Make sure that case 'MoMo': is defined (I updated the file in the drive to include this).
+
+8. If everything looks fine, run the two blocks in src/run_model.py MANUALLY (just clicking RUN will not work based on the Python default behavior).
+I hope the block run command F9 or Ctrl+Enter to work, but if not, manually drag the first block from L1-L151, run it, then select the remainders L151-, run. 
+
+9. Inspect the results by printing scores, beta, emb_df, membership_df.
